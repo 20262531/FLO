@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1794510671734,
+      "tag": "0000_uneven_lilandra",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1794510830970,
+      "tag": "0001_orange_rage",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794511995249,
+      "tag": "0002_task_guardrails",
+      "breakpoints": true
+    }
+  ]
+}
