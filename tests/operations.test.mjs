@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import {canSee,validateTransition} from '../lib/workflow.ts';
+const manager={email:'manager@test',role:'manager',department:'ALL'},hk={email:'hk@test',role:'staff',department:'HK'},eng={email:'eng@test',role:'staff',department:'ENG'};
+let count=0;function check(fn){fn();count++}
+check(()=>assert.equal(canSee(hk,{department:'ENG'}),false));
+check(()=>assert.throws(()=>validateTransition(eng,{department:'HK',status:'new'},'accepted','')));
+check(()=>assert.throws(()=>validateTransition(hk,{department:'HK',status:'assigned',assignee:'other@test'},'accepted','')));
+check(()=>assert.throws(()=>validateTransition(hk,{department:'HK',status:'progress',assignee:hk.email},'waiting','')));
+check(()=>assert.throws(()=>validateTransition(hk,{department:'HK',status:'review',assignee:hk.email},'closed','')));
+check(()=>assert.throws(()=>validateTransition(manager,{department:'HK',status:'new'},'closed','')));
+check(()=>assert.doesNotThrow(()=>validateTransition(hk,{department:'HK',status:'new'},'accepted','')));
+check(()=>assert.doesNotThrow(()=>validateTransition(manager,{department:'HK',status:'closed'},'progress','ยังไม่เรียบร้อย')));
+const base='http://127.0.0.1:5173',cookie='__sites_local_auth=1';
+async function call(body,expected=200){const r=await fetch(base+'/api/operations',{method:body?'POST':'GET',headers:{cookie,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const j=await r.json();assert.equal(r.status,expected,JSON.stringify(j));count++;return j;}
+const id=crypto.randomUUID();
+await call({action:'create',id,title:'[QA] ทดสอบวงจรงาน',department:'HK',room:'TEST-105',minutes:30,checklist:'ตรวจความเรียบร้อย'});
+await call({action:'create',id,title:'[QA] ทดสอบวงจรงาน',department:'HK',room:'TEST-105',minutes:30});
+let data=await call();assert.equal(data.tasks.filter(t=>t.id===id).length,1);count++;
+let task=()=>data.tasks.find(t=>t.id===id);
+await call({action:'task',id,version:1,status:'accepted'});
+await call({action:'task',id,version:1,status:'accepted'},409);
+data=await call();await call({action:'task',id,version:task().version,status:'progress'});
+data=await call();await call({action:'task',id,version:task().version,status:'review'},400);
+await call({action:'checklist',id,version:task().version,index:0,done:true});
+data=await call();await call({action:'task',id,version:task().version,status:'review'});
+data=await call();await call({action:'task',id,version:task().version,status:'closed'});
+data=await call();assert.equal(task().status,'closed');assert.ok(data.events.filter(e=>e.task_id===id).length>=6);count++;
+await call({action:'task',id,version:task().version,status:'progress',reason:'ทดสอบเปิดซ้ำ'});
+data=await call();assert.equal(task().closedAt,null);count++;
+await call({action:'comment',id,message:'ทดสอบข้อความส่งกะ'});
+await call({action:'room',id:'TEST-105',cleaning:'clean',service:'available',note:'ห้องทดสอบ'});
+await call({action:'room',id:'TEST-105',version:0,cleaning:'inspected',service:'available'},409);
+const unauth=await fetch(base+'/api/operations');assert.equal(unauth.status,401);count++;
+const cross=await fetch(base+'/api/operations',{method:'POST',headers:{cookie,origin:'https://example.com','Content-Type':'application/json'},body:'{}'});assert.equal(cross.status,403);count++;
+const form=new FormData();form.set('task',id);form.set('photo',new Blob(['not-an-image'],{type:'image/png'}),'bad.png');const invalid=await fetch(base+'/api/photos',{method:'POST',headers:{cookie},body:form});assert.equal(invalid.status,400);count++;
+const img=new FormData();img.set('task',id);img.set('photo',new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0S8AAAAASUVORK5CYII=','base64')],{type:'image/png'}),'qa.png');const uploaded=await fetch(base+'/api/photos',{method:'POST',headers:{cookie},body:img});assert.equal(uploaded.status,200,await uploaded.text());count++;
+const photos=await (await fetch(base+'/api/photos?task='+id,{headers:{cookie}})).json();assert.equal(photos.length,1);const photo=await fetch(base+'/api/photos?id='+photos[0].id,{headers:{cookie}});assert.equal(photo.headers.get('content-type'),'image/png');count++;
+console.log(JSON.stringify({passed:count,scope:'Local DB only; workflow, authorization, concurrency, checklist, idempotency, room conflicts, image storage'}));
